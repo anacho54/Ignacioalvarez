@@ -1,0 +1,1129 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Diseñador de Riego por Pivot</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css"/>
+<style>
+  :root {
+    --bg: #0f1117;
+    --bg2: #1a1d27;
+    --bg3: #22263a;
+    --border: rgba(255,255,255,0.08);
+    --border2: rgba(255,255,255,0.15);
+    --text: #e8eaf0;
+    --text2: #8b90a8;
+    --accent: #3b82f6;
+    --accent2: #1d4ed8;
+    --pipe: #00bcd4;
+    --tension: #f44336;
+    --pivot: #4ade80;
+    --voladizo: #fb923c;
+    --note: #facc15;
+    --success: #22c55e;
+    --danger: #ef4444;
+    --radius: 8px;
+    --radius-lg: 12px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); color: var(--text); overflow: hidden; }
+
+  /* LAYOUT */
+  #app { display: flex; flex-direction: column; height: 100vh; }
+  #header { display: flex; align-items: center; gap: 12px; padding: 8px 14px; background: var(--bg2); border-bottom: 1px solid var(--border); z-index: 100; flex-shrink: 0; }
+  #header h1 { font-size: 15px; font-weight: 600; color: var(--text); letter-spacing: -0.3px; white-space: nowrap; }
+  #header h1 span { color: var(--accent); }
+  #toolbar { display: flex; align-items: center; gap: 3px; padding: 6px 10px; background: var(--bg2); border-bottom: 1px solid var(--border); flex-wrap: wrap; flex-shrink: 0; }
+  #main { display: flex; flex: 1; overflow: hidden; }
+  #map-wrap { position: relative; flex: 1; }
+  #map { width: 100%; height: 100%; }
+  #draw-canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; }
+  #draw-canvas.active { pointer-events: all; cursor: crosshair; }
+  #draw-canvas.sel { cursor: default; }
+  #sidebar { width: 260px; background: var(--bg2); border-left: 1px solid var(--border); display: flex; flex-direction: column; overflow: hidden; flex-shrink: 0; }
+  #statusbar { padding: 4px 12px; background: var(--bg2); border-top: 1px solid var(--border); font-size: 11px; color: var(--text2); display: flex; justify-content: space-between; flex-shrink: 0; }
+
+  /* TOOLBAR */
+  .tg { display: flex; gap: 2px; padding: 0 6px; border-right: 1px solid var(--border); }
+  .tg:last-child { border-right: none; }
+  .tbtn { display: flex; align-items: center; gap: 5px; padding: 5px 10px; border: 1px solid transparent; border-radius: var(--radius); background: transparent; cursor: pointer; font-size: 12px; color: var(--text2); white-space: nowrap; transition: all .12s; }
+  .tbtn:hover { background: var(--bg3); border-color: var(--border2); color: var(--text); }
+  .tbtn.active { background: var(--accent2); border-color: var(--accent); color: #fff; }
+  .tbtn i { font-size: 13px; }
+  .tbtn .dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
+  .tbtn-danger:hover { border-color: var(--danger); color: var(--danger); }
+  .tbtn-danger.active { background: #7f1d1d; border-color: var(--danger); }
+
+  /* SIDEBAR TABS */
+  #sidebar-tabs { display: flex; border-bottom: 1px solid var(--border); flex-shrink: 0; }
+  .stab { flex: 1; padding: 8px; text-align: center; font-size: 11px; color: var(--text2); cursor: pointer; border-bottom: 2px solid transparent; transition: all .12s; }
+  .stab.active { color: var(--accent); border-bottom-color: var(--accent); }
+  #sidebar-content { flex: 1; overflow-y: auto; padding: 10px; }
+
+  /* FORMS */
+  .section-title { font-size: 10px; font-weight: 600; color: var(--text2); letter-spacing: .8px; text-transform: uppercase; margin: 12px 0 6px; }
+  .section-title:first-child { margin-top: 0; }
+  .frow { display: flex; flex-direction: column; gap: 3px; margin-bottom: 8px; }
+  .frow label { font-size: 11px; color: var(--text2); }
+  .frow input, .frow select { font-size: 12px; padding: 5px 8px; border: 1px solid var(--border2); border-radius: var(--radius); background: var(--bg3); color: var(--text); width: 100%; outline: none; transition: border .12s; }
+  .frow input:focus, .frow select:focus { border-color: var(--accent); }
+  .frow input[type=color] { height: 32px; padding: 2px 4px; cursor: pointer; }
+
+  /* TRAMOS */
+  .tramo-row { display: flex; align-items: center; gap: 5px; padding: 5px 7px; background: var(--bg3); border-radius: var(--radius); margin-bottom: 4px; border: 1px solid var(--border); }
+  .tramo-label { font-size: 11px; color: var(--text2); min-width: 24px; }
+  .tramo-input { flex: 1; padding: 3px 5px; font-size: 11px; border: 1px solid var(--border2); border-radius: 5px; background: var(--bg2); color: var(--text); }
+  .tramo-unit { font-size: 10px; color: var(--text2); }
+  .tramo-del { background: none; border: none; color: var(--text2); cursor: pointer; font-size: 13px; padding: 1px 3px; border-radius: 4px; }
+  .tramo-del:hover { color: var(--danger); background: rgba(239,68,68,.1); }
+
+  /* BUTTONS */
+  .btn { width: 100%; padding: 7px 10px; border-radius: var(--radius); font-size: 12px; cursor: pointer; transition: all .12s; border: 1px solid; }
+  .btn-primary { background: var(--accent2); border-color: var(--accent); color: #fff; }
+  .btn-primary:hover { background: var(--accent); }
+  .btn-outline { background: transparent; border-color: var(--border2); color: var(--text); }
+  .btn-outline:hover { background: var(--bg3); border-color: var(--border2); }
+  .btn-dashed { background: transparent; border: 1px dashed var(--border2); color: var(--text2); }
+  .btn-dashed:hover { border-color: var(--accent); color: var(--accent); background: rgba(59,130,246,.05); }
+  .btn-danger { background: transparent; border-color: rgba(239,68,68,.3); color: var(--danger); }
+  .btn-danger:hover { background: rgba(239,68,68,.1); border-color: var(--danger); }
+  .btn-sm { padding: 4px 8px; font-size: 11px; }
+  .btn-gap { margin-top: 5px; }
+
+  /* PIVOT LIST */
+  .pivot-card { padding: 8px 10px; background: var(--bg3); border-radius: var(--radius); margin-bottom: 6px; cursor: pointer; border: 1px solid var(--border); transition: all .12s; }
+  .pivot-card:hover { border-color: var(--border2); }
+  .pivot-card.selected { border-color: var(--accent); background: rgba(59,130,246,.08); }
+  .pivot-card-name { font-size: 12px; font-weight: 600; color: var(--text); display: flex; justify-content: space-between; align-items: center; }
+  .pivot-card-meta { font-size: 10px; color: var(--text2); margin-top: 2px; }
+  .pivot-del { background: none; border: none; color: var(--text2); cursor: pointer; font-size: 13px; }
+  .pivot-del:hover { color: var(--danger); }
+
+  /* ELEMENTS LIST */
+  .el-row { display: flex; align-items: center; gap: 6px; padding: 5px 8px; background: var(--bg3); border-radius: var(--radius); margin-bottom: 3px; font-size: 11px; cursor: pointer; border: 1px solid var(--border); transition: all .12s; }
+  .el-row:hover { border-color: var(--border2); }
+  .el-row.selected { border-color: var(--accent); }
+  .el-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+  .el-name { flex: 1; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .el-del { background: none; border: none; color: var(--text2); cursor: pointer; font-size: 12px; }
+  .el-del:hover { color: var(--danger); }
+
+  /* PROJECTS */
+  .proj-row { display: flex; align-items: center; gap: 6px; padding: 7px 8px; background: var(--bg3); border-radius: var(--radius); margin-bottom: 4px; font-size: 12px; border: 1px solid var(--border); }
+  .proj-name { flex: 1; color: var(--text); }
+  .proj-date { font-size: 10px; color: var(--text2); }
+  .proj-btn { background: none; border: 1px solid var(--border2); color: var(--text2); cursor: pointer; font-size: 10px; padding: 2px 6px; border-radius: 4px; }
+  .proj-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+  /* NOTE MODAL */
+  #note-modal { display: none; position: absolute; background: var(--bg2); border: 1px solid var(--border2); border-radius: var(--radius-lg); padding: 12px; z-index: 2000; min-width: 200px; box-shadow: 0 8px 32px rgba(0,0,0,.5); }
+  #note-modal h3 { font-size: 12px; font-weight: 600; margin-bottom: 8px; color: var(--text); }
+
+  /* TOOLTIP */
+  #tooltip { display: none; position: absolute; background: rgba(0,0,0,.85); color: #fff; font-size: 11px; padding: 4px 8px; border-radius: 5px; pointer-events: none; z-index: 3000; max-width: 200px; }
+
+  /* SCROLLBAR */
+  ::-webkit-scrollbar { width: 5px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 3px; }
+
+  /* LOGO */
+  .logo-icon { width: 26px; height: 26px; background: linear-gradient(135deg, var(--accent), #06b6d4); border-radius: 6px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  .logo-icon i { font-size: 13px; color: #fff; }
+
+  /* BADGE */
+  .badge { display: inline-block; padding: 1px 6px; border-radius: 10px; font-size: 9px; font-weight: 600; letter-spacing: .3px; }
+  .badge-blue { background: rgba(59,130,246,.2); color: #93c5fd; }
+  .badge-green { background: rgba(74,222,128,.15); color: #86efac; }
+  .badge-orange { background: rgba(251,146,60,.15); color: #fdba74; }
+
+  /* ZOOM CONTROLS */
+  .leaflet-control-zoom { border: 1px solid var(--border2) !important; border-radius: var(--radius) !important; overflow: hidden; }
+  .leaflet-control-zoom a { background: var(--bg2) !important; color: var(--text) !important; border-color: var(--border) !important; }
+  .leaflet-control-zoom a:hover { background: var(--bg3) !important; }
+
+  /* RULER */
+  .ruler-label { background: rgba(0,0,0,.7); color: #fff; padding: 2px 5px; border-radius: 4px; font-size: 10px; white-space: nowrap; }
+
+  /* SEARCH */
+  #search-box { position: absolute; top: 10px; left: 10px; z-index: 1000; display: flex; gap: 5px; }
+  #search-input { padding: 6px 10px; font-size: 12px; border: 1px solid var(--border2); border-radius: var(--radius); background: var(--bg2); color: var(--text); width: 220px; outline: none; }
+  #search-input:focus { border-color: var(--accent); }
+  #search-btn { padding: 6px 10px; border: 1px solid var(--border2); border-radius: var(--radius); background: var(--bg2); color: var(--text2); cursor: pointer; font-size: 12px; }
+  #search-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+  @media (max-width: 700px) {
+    #sidebar { display: none; }
+    #toolbar { overflow-x: auto; flex-wrap: nowrap; }
+  }
+</style>
+</head>
+<body>
+<div id="app">
+
+  <!-- HEADER -->
+  <div id="header">
+    <div class="logo-icon"><i class="fas fa-water"></i></div>
+    <h1>Diseñador de Riego por <span>Pivot</span></h1>
+    <div style="flex:1"></div>
+    <button class="tbtn" onclick="saveProject()" title="Guardar proyecto"><i class="fas fa-save"></i> Guardar</button>
+    <button class="tbtn" onclick="exportJSON()" title="Exportar JSON"><i class="fas fa-file-export"></i> Exportar</button>
+    <button class="tbtn" onclick="document.getElementById('import-file').click()" title="Importar JSON"><i class="fas fa-file-import"></i> Importar</button>
+    <input type="file" id="import-file" accept=".json" style="display:none" onchange="importJSON(event)">
+    <button class="tbtn" onclick="exportImage()" title="Exportar imagen"><i class="fas fa-image"></i> Imagen</button>
+  </div>
+
+  <!-- TOOLBAR -->
+  <div id="toolbar">
+    <div class="tg">
+      <button class="tbtn active" id="btn-move" onclick="setTool('move')" title="Mover/navegar mapa (M)">
+        <i class="fas fa-hand-paper"></i> Mover
+      </button>
+    </div>
+    <div class="tg">
+      <button class="tbtn" id="btn-pipe" onclick="setTool('pipe')" title="Tubería (T)">
+        <span class="dot" style="background:var(--pipe)"></span> Tubería
+      </button>
+      <button class="tbtn" id="btn-tension" onclick="setTool('tension')" title="Línea de tensión (E)">
+        <span class="dot" style="background:var(--tension)"></span> Tensión
+      </button>
+    </div>
+    <div class="tg">
+      <button class="tbtn" id="btn-pivot" onclick="setTool('pivot')" title="Dibujar pivot (P)">
+        <i class="fas fa-circle-notch"></i> Pivot
+      </button>
+    </div>
+    <div class="tg">
+      <button class="tbtn" id="btn-note" onclick="setTool('note')" title="Agregar nota (N)">
+        <i class="fas fa-map-pin"></i> Nota
+      </button>
+    </div>
+    <div class="tg">
+      <button class="tbtn" id="btn-select" onclick="setTool('select')" title="Seleccionar/Mover (S)">
+        <i class="fas fa-mouse-pointer"></i> Seleccionar
+      </button>
+      <button class="tbtn tbtn-danger" onclick="deleteSelected()" title="Eliminar seleccionado (Del)">
+        <i class="fas fa-trash"></i>
+      </button>
+    </div>
+    <div class="tg">
+      <button class="tbtn" onclick="undoLast()" title="Deshacer (Ctrl+Z)"><i class="fas fa-undo"></i></button>
+      <button class="tbtn tbtn-danger" onclick="clearAll()" title="Limpiar todo"><i class="fas fa-times"></i> Limpiar</button>
+    </div>
+    <div class="tg" style="margin-left:auto">
+      <span style="font-size:11px;color:var(--text2);padding:0 4px">Zoom:</span>
+      <button class="tbtn btn-sm" onclick="map.zoomIn()"><i class="fas fa-plus"></i></button>
+      <button class="tbtn btn-sm" onclick="map.zoomOut()"><i class="fas fa-minus"></i></button>
+    </div>
+  </div>
+
+  <!-- MAIN -->
+  <div id="main">
+    <div id="map-wrap">
+      <div id="map"></div>
+      <canvas id="draw-canvas"></canvas>
+
+      <!-- SEARCH -->
+      <div id="search-box">
+        <input type="text" id="search-input" placeholder="Buscar ubicación..." onkeydown="if(event.key==='Enter')searchLocation()">
+        <button id="search-btn" onclick="searchLocation()"><i class="fas fa-search"></i></button>
+      </div>
+
+      <!-- NOTE MODAL -->
+      <div id="note-modal">
+        <h3><i class="fas fa-map-pin" style="color:var(--note);margin-right:5px"></i>Nueva nota / punto</h3>
+        <div class="frow">
+          <label>Tipo</label>
+          <select id="note-type">
+            <option value="pin">📍 Punto genérico</option>
+            <option value="drill">💧 Perforación</option>
+            <option value="pump">⚙️ Bomba / Motor</option>
+            <option value="valve">🔧 Válvula</option>
+            <option value="electric">⚡ Tablero eléctrico</option>
+            <option value="tank">🛢️ Tanque</option>
+            <option value="pivot_center">🎯 Centro de pivot</option>
+            <option value="custom">✏️ Personalizado</option>
+          </select>
+        </div>
+        <div class="frow">
+          <label>Descripción</label>
+          <input type="text" id="note-text" placeholder="Ej: Perforación principal, 80m">
+        </div>
+        <div style="display:flex;gap:6px;margin-top:4px">
+          <button class="btn btn-primary" style="flex:1" onclick="confirmNote()">Confirmar</button>
+          <button class="btn btn-outline" style="flex:1" onclick="cancelNote()">Cancelar</button>
+        </div>
+      </div>
+
+      <!-- TOOLTIP -->
+      <div id="tooltip"></div>
+    </div>
+
+    <!-- SIDEBAR -->
+    <div id="sidebar">
+      <div id="sidebar-tabs">
+        <div class="stab active" onclick="showTab('pivot')"><i class="fas fa-circle-notch"></i> Pivots</div>
+        <div class="stab" onclick="showTab('elements')"><i class="fas fa-layer-group"></i> Capas</div>
+        <div class="stab" onclick="showTab('projects')"><i class="fas fa-folder"></i> Proyectos</div>
+      </div>
+      <div id="sidebar-content">
+        <!-- PIVOT TAB -->
+        <div id="tab-pivot">
+          <div class="section-title">Pivots en el mapa</div>
+          <div id="pivot-list"><p style="font-size:11px;color:var(--text2)">Sin pivots. Usá la herramienta Pivot para dibujar.</p></div>
+
+          <div class="section-title">Configurar pivot</div>
+          <div class="frow">
+            <label>Nombre</label>
+            <input type="text" id="piv-name" placeholder="Pivot 1" value="Pivot 1">
+          </div>
+          <div class="frow">
+            <label>Color</label>
+            <input type="color" id="piv-color" value="#4ade80">
+          </div>
+
+          <div class="section-title">Tramos</div>
+          <div id="tramos-container"></div>
+          <button class="btn btn-dashed btn-gap" onclick="addTramo()"><i class="fas fa-plus"></i> Agregar tramo</button>
+
+          <div class="section-title">Voladizo</div>
+          <div class="frow">
+            <label>Largo del voladizo (m)</label>
+            <input type="number" id="voladizo" value="0" min="0" step="1" placeholder="0">
+          </div>
+
+          <div style="display:flex;gap:5px;margin-top:10px">
+            <button class="btn btn-primary" style="flex:2" onclick="applyPivotConfig()"><i class="fas fa-check"></i> Aplicar</button>
+            <button class="btn btn-outline" style="flex:1" onclick="newPivotConfig()">Nuevo</button>
+          </div>
+          <p style="font-size:10px;color:var(--text2);margin-top:6px">Doble clic sobre un pivot para seleccionarlo y editarlo.</p>
+        </div>
+
+        <!-- ELEMENTS TAB -->
+        <div id="tab-elements" style="display:none">
+          <div class="section-title">Tuberías</div>
+          <div id="list-pipes"><p style="font-size:11px;color:var(--text2)">Sin tuberías.</p></div>
+          <div class="section-title">Líneas de tensión</div>
+          <div id="list-tension"><p style="font-size:11px;color:var(--text2)">Sin líneas.</p></div>
+          <div class="section-title">Notas / Puntos</div>
+          <div id="list-notes"><p style="font-size:11px;color:var(--text2)">Sin notas.</p></div>
+        </div>
+
+        <!-- PROJECTS TAB -->
+        <div id="tab-projects" style="display:none">
+          <div class="section-title">Proyectos guardados</div>
+          <div id="project-list"><p style="font-size:11px;color:var(--text2)">Sin proyectos guardados.</p></div>
+          <div class="section-title" style="margin-top:12px">Nuevo proyecto</div>
+          <div class="frow">
+            <label>Nombre del proyecto</label>
+            <input type="text" id="proj-name" placeholder="Mi campo - Lote 1">
+          </div>
+          <button class="btn btn-primary btn-gap" onclick="saveProject()"><i class="fas fa-save"></i> Guardar proyecto actual</button>
+          <button class="btn btn-outline btn-gap" onclick="newProject()"><i class="fas fa-file"></i> Nuevo proyecto en blanco</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="statusbar">
+    <span id="status-msg">Herramienta activa: Mover mapa &nbsp;|&nbsp; Atajos: M=Mover T=Tubería E=Tensión P=Pivot N=Nota S=Seleccionar Del=Borrar</span>
+    <span id="coords-display">Lat: — &nbsp; Lng: —</span>
+  </div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+// ─── STATE ───────────────────────────────────────────────────────────────────
+let map, canvas, ctx;
+let currentTool = 'move';
+let isDrawing = false;
+let startX, startY, startLL;
+let elements = [];   // {type, ...}
+let pivots = [];
+let selectedEl = null;
+let activePivot = null;
+let pendingNoteXY = null;
+let history = [];
+let tramosData = [{largo: 100}];
+let dragEl = null, dragOX, dragOY, dragPivStart;
+
+const NOTE_ICONS = {pin:'📍', drill:'💧', pump:'⚙️', valve:'🔧', electric:'⚡', tank:'🛢️', pivot_center:'🎯', custom:'✏️'};
+const NOTE_LABELS = {pin:'Punto', drill:'Perforación', pump:'Bomba', valve:'Válvula', electric:'Eléctrico', tank:'Tanque', pivot_center:'Centro pivot', custom:'Nota'};
+
+// ─── INIT ─────────────────────────────────────────────────────────────────────
+function init() {
+  map = L.map('map', { zoomControl: true, attributionControl: true })
+    .setView([-33.1, -64.3], 14);
+
+  // Esri World Imagery (satellite)
+  L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+    attribution: 'Imagery © Esri', maxZoom: 21, maxNativeZoom: 19
+  }).addTo(map);
+
+  // Labels overlay
+  L.tileLayer('https://services.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}', {
+    maxZoom: 21, maxNativeZoom: 19, opacity: 0.7
+  }).addTo(map);
+
+  canvas = document.getElementById('draw-canvas');
+  ctx = canvas.getContext('2d');
+  resizeCanvas();
+
+  map.on('move zoom', () => { resizeCanvas(); redraw(); });
+  window.addEventListener('resize', () => { resizeCanvas(); redraw(); });
+
+  map.on('mousemove', e => {
+    document.getElementById('coords-display').textContent =
+      `Lat: ${e.latlng.lat.toFixed(6)}   Lng: ${e.latlng.lng.toFixed(6)}`;
+  });
+
+  canvas.addEventListener('mousedown', onMouseDown);
+  canvas.addEventListener('mousemove', onMouseMove);
+  canvas.addEventListener('mouseup', onMouseUp);
+  canvas.addEventListener('dblclick', onDblClick);
+  canvas.addEventListener('mousemove', onHover);
+
+  document.addEventListener('keydown', onKeyDown);
+
+  setTool('move');
+  initTramos();
+  loadProjects();
+}
+
+function resizeCanvas() {
+  const wrap = document.getElementById('map-wrap');
+  canvas.width = wrap.offsetWidth;
+  canvas.height = wrap.offsetHeight;
+}
+
+// ─── COORDINATE HELPERS ──────────────────────────────────────────────────────
+function ll2c(latlng) {
+  const p = map.latLngToContainerPoint(latlng);
+  return { x: p.x, y: p.y };
+}
+function c2ll(x, y) { return map.containerPointToLatLng([x, y]); }
+function mToPx(center, meters) {
+  const p1 = map.latLngToContainerPoint(center);
+  const e = L.latLng(center.lat, center.lng + 0.001);
+  const p2 = map.latLngToContainerPoint(e);
+  const mpp = map.distance(center, e) / Math.abs(p2.x - p1.x);
+  return meters / mpp;
+}
+
+// ─── TOOL MANAGEMENT ─────────────────────────────────────────────────────────
+function setTool(t) {
+  currentTool = t;
+  document.querySelectorAll('.tbtn[id^="btn-"]').forEach(b => b.classList.remove('active'));
+  const b = document.getElementById('btn-' + t);
+  if (b) b.classList.add('active');
+
+  canvas.classList.remove('active', 'sel');
+  if (t === 'move') {
+    map.dragging.enable();
+    map.scrollWheelZoom.enable();
+  } else {
+    map.dragging.disable();
+    map.scrollWheelZoom.disable();
+    canvas.classList.add('active');
+    if (t === 'select') canvas.classList.add('sel');
+  }
+
+  const msgs = {
+    move: 'Mover mapa — arrastrá para navegar, rueda para zoom',
+    pipe: 'Tubería — clic y arrastrar para dibujar línea celeste',
+    tension: 'Tensión — clic y arrastrar para dibujar línea roja',
+    pivot: 'Pivot — clic = centro, arrastrá para definir radio total',
+    note: 'Nota — clic en el mapa para colocar un punto/marcador',
+    select: 'Seleccionar — clic para seleccionar, arrastrá para mover'
+  };
+  document.getElementById('status-msg').textContent = (msgs[t] || t) +
+    '   |   Atajos: M T E P N S Del';
+
+  selectedEl = null;
+  redraw();
+}
+
+// ─── MOUSE EVENTS ────────────────────────────────────────────────────────────
+function onMouseDown(e) {
+  const { x, y } = evXY(e);
+
+  if (currentTool === 'select') {
+    selectedEl = hitTest(x, y);
+    if (selectedEl) {
+      dragEl = selectedEl;
+      dragOX = x; dragOY = y;
+      if (selectedEl.type === 'pivot') {
+        dragPivStart = { cx: ll2c(selectedEl.center).x, cy: ll2c(selectedEl.center).y };
+      }
+    }
+    redraw(); return;
+  }
+  if (currentTool === 'note') {
+    pendingNoteXY = { x, y, ll: c2ll(x, y) };
+    const modal = document.getElementById('note-modal');
+    modal.style.display = 'block';
+    modal.style.left = Math.min(x + 12, canvas.width - 220) + 'px';
+    modal.style.top = Math.min(y + 12, canvas.height - 200) + 'px';
+    document.getElementById('note-text').value = '';
+    setTimeout(() => document.getElementById('note-text').focus(), 50);
+    return;
+  }
+  isDrawing = true;
+  startX = x; startY = y;
+  startLL = c2ll(x, y);
+}
+
+function onMouseMove(e) {
+  const { x, y } = evXY(e);
+
+  if (currentTool === 'select' && dragEl) {
+    const dx = x - dragOX, dy = y - dragOY;
+    if (dragEl.type === 'note') {
+      dragEl.ll = c2ll(ll2c(dragEl.ll).x + dx, ll2c(dragEl.ll).y + dy);
+    } else if (dragEl.type === 'line') {
+      const as = ll2c(dragEl.sLL), ae = ll2c(dragEl.eLL);
+      dragEl.sLL = c2ll(as.x + dx, as.y + dy);
+      dragEl.eLL = c2ll(ae.x + dx, ae.y + dy);
+    } else if (dragEl.type === 'pivot') {
+      dragEl.center = c2ll(dragPivStart.cx + dx, dragPivStart.cy + dy);
+    }
+    dragOX = x; dragOY = y;
+    if (dragEl.type === 'pivot') { dragPivStart.cx += dx; dragPivStart.cy += dy; dragOX = x; dragOY = y; }
+    redraw(); return;
+  }
+
+  if (!isDrawing) return;
+  redraw();
+  const color = currentTool === 'pipe' ? '#00bcd4' : currentTool === 'tension' ? '#f44336' : '#4ade80';
+  ctx.save();
+  ctx.strokeStyle = color; ctx.lineWidth = currentTool === 'pivot' ? 1.5 : 3;
+  ctx.setLineDash(currentTool === 'pivot' ? [7, 5] : []);
+  ctx.globalAlpha = 0.8;
+  ctx.beginPath();
+  if (currentTool === 'pivot') {
+    const r = Math.hypot(x - startX, y - startY);
+    ctx.arc(startX, startY, r, 0, Math.PI * 2);
+    // show radius in meters
+    const ll2 = c2ll(startX + r, startY);
+    const rm = map.distance(startLL, ll2);
+    ctx.restore();
+    ctx.save();
+    ctx.font = 'bold 12px Segoe UI';
+    ctx.fillStyle = '#fff';
+    ctx.textAlign = 'left';
+    ctx.fillText(`R: ${rm.toFixed(0)}m`, startX + 6, startY - 6);
+  } else {
+    ctx.moveTo(startX, startY); ctx.lineTo(x, y);
+    // show length
+    const ll2 = c2ll(x, y);
+    const dm = map.distance(startLL, ll2);
+    ctx.stroke();
+    ctx.restore();
+    ctx.save();
+    ctx.font = '11px Segoe UI'; ctx.fillStyle = '#fff';
+    ctx.textAlign = 'center';
+    ctx.fillText(`${dm.toFixed(0)}m`, (startX+x)/2, (startY+y)/2 - 7);
+  }
+  ctx.stroke();
+  ctx.restore();
+}
+
+function onMouseUp(e) {
+  const { x, y } = evXY(e);
+  if (currentTool === 'select') { dragEl = null; redraw(); return; }
+  if (!isDrawing) return;
+  isDrawing = false;
+
+  saveHistory();
+
+  if (currentTool === 'pipe' || currentTool === 'tension') {
+    const dist = Math.hypot(x - startX, y - startY);
+    if (dist > 6) {
+      const ll2 = c2ll(x, y);
+      const dm = map.distance(startLL, ll2);
+      elements.push({ type: 'line', lineType: currentTool, sLL: startLL, eLL: ll2,
+        color: currentTool === 'pipe' ? '#00bcd4' : '#f44336',
+        lengthM: dm });
+    }
+  } else if (currentTool === 'pivot') {
+    const r = Math.hypot(x - startX, y - startY);
+    if (r > 12) {
+      const eLL = c2ll(startX + r, startY);
+      const radiusM = map.distance(startLL, eLL);
+      const tramos = tramosData.map((t, i) => ({ largo: t.largo, label: `T${i+1}` }));
+      const voladizo = parseFloat(document.getElementById('voladizo').value) || 0;
+      const color = document.getElementById('piv-color').value || '#4ade80';
+      const name = document.getElementById('piv-name').value || `Pivot ${pivots.length + 1}`;
+      const piv = { type: 'pivot', center: startLL, radiusM, tramos, voladizo, name, color };
+      pivots.push(piv);
+      elements.push(piv);
+      activePivot = piv;
+      updatePivotList();
+      updateElementsList();
+    }
+  }
+  redraw();
+}
+
+function onDblClick(e) {
+  if (currentTool !== 'select') return;
+  const { x, y } = evXY(e);
+  const el = hitTest(x, y);
+  if (el && el.type === 'pivot') {
+    activePivot = el;
+    loadPivotToPanel(el);
+    showTab('pivot');
+    selectedEl = el;
+    redraw();
+  }
+}
+
+function onHover(e) {
+  const { x, y } = evXY(e);
+  if (currentTool !== 'select') { hideTooltip(); return; }
+  const el = hitTest(x, y);
+  if (el) {
+    let txt = '';
+    if (el.type === 'pivot') txt = `${el.name} — R: ${el.radiusM.toFixed(0)}m — ${el.tramos.length} tramos`;
+    if (el.type === 'line') txt = `${el.lineType === 'pipe' ? 'Tubería' : 'Tensión'} — ${(el.lengthM||0).toFixed(0)}m`;
+    if (el.type === 'note') txt = `${NOTE_LABELS[el.noteType]||'Nota'}${el.text ? ': '+el.text : ''}`;
+    showTooltip(txt, x, y);
+  } else { hideTooltip(); }
+}
+
+function evXY(e) {
+  const r = canvas.getBoundingClientRect();
+  return { x: e.clientX - r.left, y: e.clientY - r.top };
+}
+
+// ─── HIT TEST ────────────────────────────────────────────────────────────────
+function hitTest(x, y) {
+  for (let i = elements.length - 1; i >= 0; i--) {
+    const el = elements[i];
+    if (el.type === 'note') {
+      const p = ll2c(el.ll);
+      if (Math.hypot(x - p.x, y - p.y) < 16) return el;
+    } else if (el.type === 'line') {
+      const a = ll2c(el.sLL), b = ll2c(el.eLL);
+      if (distSeg(x, y, a.x, a.y, b.x, b.y) < 8) return el;
+    } else if (el.type === 'pivot') {
+      const c = ll2c(el.center);
+      const rPx = mToPx(el.center, el.radiusM);
+      const d = Math.hypot(x - c.x, y - c.y);
+      if (d < rPx + 12) return el;
+    }
+  }
+  return null;
+}
+
+function distSeg(px, py, ax, ay, bx, by) {
+  const dx = bx - ax, dy = by - ay;
+  if (dx === 0 && dy === 0) return Math.hypot(px - ax, py - ay);
+  const t = Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / (dx * dx + dy * dy)));
+  return Math.hypot(px - (ax + t * dx), py - (ay + t * dy));
+}
+
+// ─── DRAW ─────────────────────────────────────────────────────────────────────
+function redraw() {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  elements.forEach(el => {
+    if (el.type === 'line') drawLine(el);
+    else if (el.type === 'pivot') drawPivot(el);
+    else if (el.type === 'note') drawNote(el);
+  });
+}
+
+function drawLine(el) {
+  const a = ll2c(el.sLL), b = ll2c(el.eLL);
+  ctx.save();
+  const sel = el === selectedEl;
+  ctx.strokeStyle = el.color;
+  ctx.lineWidth = sel ? 5 : 3;
+  if (sel) { ctx.shadowColor = el.color; ctx.shadowBlur = 10; }
+  ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
+  // arrows
+  drawArrow(ctx, a.x, a.y, b.x, b.y, el.color);
+  // length label
+  if (el.lengthM > 0) {
+    const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
+    ctx.font = '10px Segoe UI'; ctx.fillStyle = '#fff';
+    ctx.textAlign = 'center';
+    ctx.strokeStyle = 'rgba(0,0,0,.6)'; ctx.lineWidth = 3;
+    ctx.strokeText(`${el.lengthM.toFixed(0)}m`, mx, my - 6);
+    ctx.fillText(`${el.lengthM.toFixed(0)}m`, mx, my - 6);
+  }
+  ctx.restore();
+}
+
+function drawArrow(ctx, x1, y1, x2, y2, color) {
+  const angle = Math.atan2(y2 - y1, x2 - x1);
+  const mx = (x1 + x2) / 2, my = (y1 + y2) / 2;
+  ctx.save();
+  ctx.translate(mx, my); ctx.rotate(angle);
+  ctx.fillStyle = color;
+  ctx.beginPath(); ctx.moveTo(6, 0); ctx.lineTo(-4, -4); ctx.lineTo(-4, 4); ctx.closePath(); ctx.fill();
+  ctx.restore();
+}
+
+function drawPivot(piv) {
+  const c = ll2c(piv.center);
+  const totalMeters = piv.tramos.reduce((s, t) => s + t.largo, 0) + piv.voladizo;
+  const scale = piv.radiusM / (totalMeters || 1);
+  const sel = el => el === selectedEl || piv === activePivot;
+  const isSel = sel(piv);
+
+  ctx.save();
+  if (isSel) { ctx.shadowColor = piv.color; ctx.shadowBlur = 14; }
+
+  let rAcc = 0;
+  piv.tramos.forEach((tramo, i) => {
+    const r1m = rAcc * scale;
+    const r2m = (rAcc + tramo.largo) * scale;
+    const rPx1 = mToPx(piv.center, r1m);
+    const rPx2 = mToPx(piv.center, r2m);
+    const hue = parseInt(piv.color.replace('#',''), 16) > 0 ? (i * 28 + 120) % 360 : 120;
+    const col = `hsl(${hue},65%,${isSel ? 55 : 45}%)`;
+
+    // fill ring
+    ctx.fillStyle = `hsla(${hue},65%,50%,0.07)`;
+    ctx.beginPath();
+    ctx.arc(c.x, c.y, rPx2, 0, Math.PI * 2);
+    ctx.arc(c.x, c.y, Math.max(0, rPx1), 0, Math.PI * 2, true);
+    ctx.fill();
+
+    // circle
+    ctx.strokeStyle = col;
+    ctx.lineWidth = isSel ? 2.5 : 1.5;
+    ctx.setLineDash([]);
+    ctx.beginPath(); ctx.arc(c.x, c.y, rPx2, 0, Math.PI * 2); ctx.stroke();
+
+    // tramo label
+    if (rPx2 > 18) {
+      const midRpx = (rPx1 + rPx2) / 2;
+      const fs = Math.max(9, Math.min(11, rPx2 / 9));
+      ctx.font = `bold ${fs}px Segoe UI`;
+      ctx.fillStyle = '#fff';
+      ctx.strokeStyle = 'rgba(0,0,0,.7)'; ctx.lineWidth = 2;
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.strokeText(`T${i+1} ${tramo.largo}m`, c.x, c.y - midRpx);
+      ctx.fillStyle = col;
+      ctx.fillText(`T${i+1} ${tramo.largo}m`, c.x, c.y - midRpx);
+    }
+    rAcc += tramo.largo;
+  });
+
+  // voladizo
+  if (piv.voladizo > 0) {
+    const r1m = rAcc * scale;
+    const r2m = (rAcc + piv.voladizo) * scale;
+    const rPx1 = mToPx(piv.center, r1m);
+    const rPx2 = mToPx(piv.center, r2m);
+
+    ctx.fillStyle = 'rgba(251,146,60,0.08)';
+    ctx.beginPath();
+    ctx.arc(c.x, c.y, rPx2, 0, Math.PI * 2);
+    ctx.arc(c.x, c.y, Math.max(0, rPx1), 0, Math.PI * 2, true);
+    ctx.fill();
+
+    ctx.strokeStyle = '#fb923c'; ctx.lineWidth = 2;
+    ctx.setLineDash([6, 4]);
+    ctx.beginPath(); ctx.arc(c.x, c.y, rPx2, 0, Math.PI * 2); ctx.stroke();
+    ctx.setLineDash([]);
+
+    if (rPx2 > 18) {
+      const midRpx = (rPx1 + rPx2) / 2;
+      ctx.font = 'bold 10px Segoe UI'; ctx.fillStyle = '#fdba74';
+      ctx.strokeStyle = 'rgba(0,0,0,.7)'; ctx.lineWidth = 2;
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.strokeText(`Vol. ${piv.voladizo}m`, c.x + midRpx * 0.7, c.y - midRpx * 0.7);
+      ctx.fillText(`Vol. ${piv.voladizo}m`, c.x + midRpx * 0.7, c.y - midRpx * 0.7);
+    }
+  }
+
+  // center cross
+  ctx.strokeStyle = piv.color; ctx.lineWidth = 1.5; ctx.setLineDash([]);
+  ctx.beginPath(); ctx.moveTo(c.x - 8, c.y); ctx.lineTo(c.x + 8, c.y); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(c.x, c.y - 8); ctx.lineTo(c.x, c.y + 8); ctx.stroke();
+  ctx.fillStyle = piv.color;
+  ctx.beginPath(); ctx.arc(c.x, c.y, 3, 0, Math.PI * 2); ctx.fill();
+
+  // name label
+  ctx.font = 'bold 12px Segoe UI'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.strokeStyle = 'rgba(0,0,0,.8)'; ctx.lineWidth = 3;
+  ctx.strokeText(piv.name, c.x, c.y - 14);
+  ctx.fillStyle = '#fff';
+  ctx.fillText(piv.name, c.x, c.y - 14);
+
+  // total radius label
+  const rPxTotal = mToPx(piv.center, piv.radiusM);
+  if (rPxTotal > 30) {
+    ctx.font = '10px Segoe UI'; ctx.textAlign = 'left';
+    ctx.strokeStyle = 'rgba(0,0,0,.7)'; ctx.lineWidth = 2;
+    ctx.strokeText(`R=${piv.radiusM.toFixed(0)}m`, c.x + 5, c.y + rPxTotal - 8);
+    ctx.fillStyle = piv.color;
+    ctx.fillText(`R=${piv.radiusM.toFixed(0)}m`, c.x + 5, c.y + rPxTotal - 8);
+  }
+
+  ctx.restore();
+}
+
+function drawNote(el) {
+  const p = ll2c(el.ll);
+  const sel = el === selectedEl;
+  ctx.save();
+  if (sel) { ctx.shadowColor = '#facc15'; ctx.shadowBlur = 10; }
+  ctx.font = '20px serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
+  ctx.fillText(NOTE_ICONS[el.noteType] || '📍', p.x, p.y);
+  if (el.text) {
+    ctx.font = `bold 10px Segoe UI`;
+    ctx.strokeStyle = 'rgba(0,0,0,.8)'; ctx.lineWidth = 3;
+    ctx.textBaseline = 'top';
+    ctx.strokeText(el.text, p.x, p.y + 2);
+    ctx.fillStyle = '#fff';
+    ctx.fillText(el.text, p.x, p.y + 2);
+  }
+  ctx.restore();
+}
+
+// ─── NOTES ───────────────────────────────────────────────────────────────────
+function confirmNote() {
+  if (!pendingNoteXY) return;
+  saveHistory();
+  const text = document.getElementById('note-text').value;
+  const noteType = document.getElementById('note-type').value;
+  elements.push({ type: 'note', ll: pendingNoteXY.ll, text, noteType });
+  document.getElementById('note-modal').style.display = 'none';
+  pendingNoteXY = null;
+  updateElementsList(); redraw();
+}
+function cancelNote() {
+  document.getElementById('note-modal').style.display = 'none';
+  pendingNoteXY = null;
+}
+
+// ─── PIVOT CONFIG ─────────────────────────────────────────────────────────────
+function applyPivotConfig() {
+  if (!activePivot) { alert('Doble clic sobre un pivot para seleccionarlo primero.'); return; }
+  saveHistory();
+  activePivot.tramos = tramosData.map((t, i) => ({ largo: t.largo, label: `T${i+1}` }));
+  activePivot.voladizo = parseFloat(document.getElementById('voladizo').value) || 0;
+  activePivot.name = document.getElementById('piv-name').value || activePivot.name;
+  activePivot.color = document.getElementById('piv-color').value || '#4ade80';
+  updatePivotList(); updateElementsList(); redraw();
+}
+
+function loadPivotToPanel(piv) {
+  document.getElementById('piv-name').value = piv.name;
+  document.getElementById('piv-color').value = piv.color || '#4ade80';
+  document.getElementById('voladizo').value = piv.voladizo || 0;
+  tramosData = piv.tramos.map(t => ({ largo: t.largo }));
+  renderTramos();
+}
+
+function newPivotConfig() {
+  activePivot = null;
+  document.getElementById('piv-name').value = `Pivot ${pivots.length + 1}`;
+  tramosData = [{ largo: 100 }];
+  document.getElementById('voladizo').value = 0;
+  document.getElementById('piv-color').value = '#4ade80';
+  renderTramos();
+  selectedEl = null; redraw();
+}
+
+// ─── TRAMOS ───────────────────────────────────────────────────────────────────
+function initTramos() { tramosData = [{ largo: 100 }]; renderTramos(); }
+
+function renderTramos() {
+  const c = document.getElementById('tramos-container');
+  c.innerHTML = '';
+  tramosData.forEach((t, i) => {
+    const row = document.createElement('div');
+    row.className = 'tramo-row';
+    row.innerHTML = `
+      <span class="tramo-label">T${i+1}</span>
+      <input class="tramo-input" type="number" value="${t.largo}" min="1" step="1" onchange="tramosData[${i}].largo=parseInt(this.value)||50">
+      <span class="tramo-unit">m</span>
+      <button class="tramo-del" onclick="removeTramo(${i})" title="Eliminar tramo">×</button>`;
+    c.appendChild(row);
+  });
+  const total = tramosData.reduce((s, t) => s + t.largo, 0);
+  const vola = parseFloat(document.getElementById('voladizo').value) || 0;
+  if (!document.getElementById('tramos-total')) {
+    const div = document.createElement('div');
+    div.id = 'tramos-total';
+    div.style = 'font-size:11px;color:var(--text2);text-align:right;margin-top:3px';
+    c.after(div);
+  }
+  document.getElementById('tramos-total').textContent = `Total tramos: ${total}m` + (vola ? ` + voladizo ${vola}m = ${total+vola}m` : '');
+}
+
+function addTramo() { tramosData.push({ largo: 100 }); renderTramos(); }
+function removeTramo(i) { if (tramosData.length > 1) { tramosData.splice(i, 1); renderTramos(); } }
+
+// ─── LISTS ────────────────────────────────────────────────────────────────────
+function updatePivotList() {
+  const list = document.getElementById('pivot-list');
+  if (!pivots.length) { list.innerHTML = '<p style="font-size:11px;color:var(--text2)">Sin pivots. Usá la herramienta Pivot para dibujar.</p>'; return; }
+  list.innerHTML = '';
+  pivots.forEach((p, i) => {
+    const total = p.tramos.reduce((s, t) => s + t.largo, 0) + p.voladizo;
+    const d = document.createElement('div');
+    d.className = 'pivot-card' + (p === activePivot ? ' selected' : '');
+    d.innerHTML = `
+      <div class="pivot-card-name">
+        <span><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${p.color};margin-right:5px"></span>${p.name}</span>
+        <button class="pivot-del" onclick="removePivot(${i});event.stopPropagation()">×</button>
+      </div>
+      <div class="pivot-card-meta">${p.tramos.length} tramos · R ${p.radiusM.toFixed(0)}m · Total ${total}m${p.voladizo ? ` · Vol. ${p.voladizo}m` : ''}</div>`;
+    d.onclick = () => { activePivot = p; loadPivotToPanel(p); selectedEl = p; updatePivotList(); redraw(); };
+    list.appendChild(d);
+  });
+}
+
+function updateElementsList() {
+  const pipes = elements.filter(e => e.type === 'line' && e.lineType === 'pipe');
+  const tensions = elements.filter(e => e.type === 'line' && e.lineType === 'tension');
+  const notes = elements.filter(e => e.type === 'note');
+  renderElList('list-pipes', pipes, '📦', '#00bcd4');
+  renderElList('list-tension', tensions, '⚡', '#f44336');
+  renderElList('list-notes', notes, '📍', '#facc15');
+}
+
+function renderElList(id, arr, icon, color) {
+  const el = document.getElementById(id);
+  if (!arr.length) { el.innerHTML = `<p style="font-size:11px;color:var(--text2)">Sin elementos.</p>`; return; }
+  el.innerHTML = '';
+  arr.forEach((item, i) => {
+    const d = document.createElement('div');
+    d.className = 'el-row' + (item === selectedEl ? ' selected' : '');
+    const label = item.type === 'note' ? (item.text || NOTE_LABELS[item.noteType] || 'Nota') :
+      `${item.lengthM ? item.lengthM.toFixed(0)+'m' : '—'}`;
+    d.innerHTML = `<span class="el-dot" style="background:${color}"></span><span class="el-name">${label}</span><button class="el-del" onclick="deleteElement(${elements.indexOf(item)});event.stopPropagation()">×</button>`;
+    d.onclick = () => { selectedEl = item; redraw(); };
+    el.appendChild(d);
+  });
+}
+
+// ─── DELETE / CLEAR ───────────────────────────────────────────────────────────
+function deleteSelected() {
+  if (!selectedEl) return;
+  saveHistory();
+  removeElement(selectedEl);
+  selectedEl = null;
+  updatePivotList(); updateElementsList(); redraw();
+}
+
+function deleteElement(idx) {
+  if (idx < 0 || idx >= elements.length) return;
+  saveHistory();
+  removeElement(elements[idx]);
+  updatePivotList(); updateElementsList(); redraw();
+}
+
+function removeElement(el) {
+  const i = elements.indexOf(el);
+  if (i >= 0) elements.splice(i, 1);
+  const pi = pivots.indexOf(el);
+  if (pi >= 0) pivots.splice(pi, 1);
+  if (activePivot === el) activePivot = null;
+}
+
+function removePivot(i) { saveHistory(); removeElement(pivots[i]); selectedEl = null; updatePivotList(); updateElementsList(); redraw(); }
+
+function clearAll() {
+  if (!confirm('¿Limpiar todos los elementos del mapa?')) return;
+  saveHistory();
+  elements = []; pivots = []; selectedEl = null; activePivot = null;
+  updatePivotList(); updateElementsList(); redraw();
+}
+
+// ─── UNDO ─────────────────────────────────────────────────────────────────────
+function saveHistory() {
+  history.push(JSON.parse(JSON.stringify({ elements: elements.map(serEl), pivots: pivots.map(serPiv) })));
+  if (history.length > 30) history.shift();
+}
+
+function undoLast() {
+  if (!history.length) return;
+  const state = history.pop();
+  elements = state.elements.map(deserEl);
+  pivots = elements.filter(e => e.type === 'pivot');
+  selectedEl = null; activePivot = null;
+  updatePivotList(); updateElementsList(); redraw();
+}
+
+function serEl(e) {
+  if (e.type === 'pivot') return { ...e, center: [e.center.lat, e.center.lng] };
+  if (e.type === 'line') return { ...e, sLL: [e.sLL.lat, e.sLL.lng], eLL: [e.eLL.lat, e.eLL.lng] };
+  if (e.type === 'note') return { ...e, ll: [e.ll.lat, e.ll.lng] };
+  return e;
+}
+function serPiv(p) { return serEl(p); }
+function deserEl(e) {
+  if (e.type === 'pivot') return { ...e, center: L.latLng(e.center[0], e.center[1]) };
+  if (e.type === 'line') return { ...e, sLL: L.latLng(e.sLL[0], e.sLL[1]), eLL: L.latLng(e.eLL[0], e.eLL[1]) };
+  if (e.type === 'note') return { ...e, ll: L.latLng(e.ll[0], e.ll[1]) };
+  return e;
+}
+
+// ─── PROJECTS ─────────────────────────────────────────────────────────────────
+function getProjectData() {
+  return { elements: elements.map(serEl), pivots: [] /* embedded in elements */ };
+}
+
+function loadProjectData(data) {
+  elements = (data.elements || []).map(deserEl);
+  pivots = elements.filter(e => e.type === 'pivot');
+  selectedEl = null; activePivot = null;
+  updatePivotList(); updateElementsList(); redraw();
+}
+
+function saveProject() {
+  const name = document.getElementById('proj-name').value || `Proyecto ${new Date().toLocaleDateString('es')}`;
+  const projects = JSON.parse(localStorage.getItem('pivot_projects') || '[]');
+  const existing = projects.findIndex(p => p.name === name);
+  const entry = { name, date: new Date().toISOString(), data: getProjectData() };
+  if (existing >= 0) projects[existing] = entry; else projects.unshift(entry);
+  localStorage.setItem('pivot_projects', JSON.stringify(projects));
+  loadProjects();
+  alert(`Proyecto "${name}" guardado.`);
+}
+
+function loadProjects() {
+  const projects = JSON.parse(localStorage.getItem('pivot_projects') || '[]');
+  const list = document.getElementById('project-list');
+  if (!projects.length) { list.innerHTML = '<p style="font-size:11px;color:var(--text2)">Sin proyectos guardados.</p>'; return; }
+  list.innerHTML = '';
+  projects.forEach((p, i) => {
+    const d = document.createElement('div');
+    d.className = 'proj-row';
+    const dt = new Date(p.date).toLocaleDateString('es');
+    d.innerHTML = `<span class="proj-name">${p.name}</span><span class="proj-date">${dt}</span>
+      <button class="proj-btn" onclick="loadProjectEntry(${i})">Abrir</button>
+      <button class="proj-btn" onclick="deleteProjectEntry(${i})" style="color:var(--danger)">✕</button>`;
+    list.appendChild(d);
+  });
+}
+
+function loadProjectEntry(i) {
+  const projects = JSON.parse(localStorage.getItem('pivot_projects') || '[]');
+  if (!projects[i]) return;
+  if (elements.length && !confirm('¿Cargar este proyecto? Se perderán cambios no guardados.')) return;
+  loadProjectData(projects[i].data);
+  document.getElementById('proj-name').value = projects[i].name;
+}
+
+function deleteProjectEntry(i) {
+  const projects = JSON.parse(localStorage.getItem('pivot_projects') || '[]');
+  projects.splice(i, 1);
+  localStorage.setItem('pivot_projects', JSON.stringify(projects));
+  loadProjects();
+}
+
+function newProject() {
+  if (elements.length && !confirm('¿Nuevo proyecto? Se perderán cambios no guardados.')) return;
+  elements = []; pivots = []; selectedEl = null; activePivot = null;
+  document.getElementById('proj-name').value = '';
+  updatePivotList(); updateElementsList(); redraw();
+}
+
+function exportJSON() {
+  const data = JSON.stringify(getProjectData(), null, 2);
+  const blob = new Blob([data], { type: 'application/json' });
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+  a.download = (document.getElementById('proj-name').value || 'pivot_riego') + '.json';
+  a.click();
+}
+
+function importJSON(event) {
+  const file = event.target.files[0]; if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    try {
+      const data = JSON.parse(e.target.result);
+      loadProjectData(data);
+      document.getElementById('proj-name').value = file.name.replace('.json', '');
+    } catch (err) { alert('Error al importar: ' + err.message); }
+  };
+  reader.readAsText(file);
+  event.target.value = '';
+}
+
+function exportImage() {
+  const mapCanvas = document.querySelector('#map .leaflet-layer canvas') ||
+    document.querySelector('#map canvas');
+  const out = document.createElement('canvas');
+  out.width = canvas.width; out.height = canvas.height;
+  const octx = out.getContext('2d');
+  // draw tiles
+  document.querySelectorAll('#map .leaflet-tile-pane img').forEach(img => {
+    try {
+      const r = img.getBoundingClientRect();
+      const mr = document.getElementById('map').getBoundingClientRect();
+      octx.drawImage(img, r.left - mr.left, r.top - mr.top, r.width, r.height);
+    } catch(e) {}
+  });
+  octx.drawImage(canvas, 0, 0);
+  const a = document.createElement('a'); a.href = out.toDataURL('image/png');
+  a.download = (document.getElementById('proj-name').value || 'pivot_riego') + '.png';
+  a.click();
+}
+
+// ─── SEARCH ───────────────────────────────────────────────────────────────────
+async function searchLocation() {
+  const q = document.getElementById('search-input').value.trim(); if (!q) return;
+  try {
+    const r = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(q)}&limit=1`);
+    const data = await r.json();
+    if (data.length) { map.setView([data[0].lat, data[0].lon], 15); }
+    else { alert('Ubicación no encontrada.'); }
+  } catch(e) { alert('Error al buscar.'); }
+}
+
+// ─── TABS ─────────────────────────────────────────────────────────────────────
+function showTab(name) {
+  ['pivot','elements','projects'].forEach(t => {
+    document.getElementById('tab-' + t).style.display = t === name ? '' : 'none';
+  });
+  document.querySelectorAll('.stab').forEach((s, i) => {
+    s.classList.toggle('active', ['pivot','elements','projects'][i] === name);
+  });
+  if (name === 'elements') updateElementsList();
+  if (name === 'projects') loadProjects();
+}
+
+// ─── TOOLTIP ─────────────────────────────────────────────────────────────────
+function showTooltip(text, x, y) {
+  const t = document.getElementById('tooltip');
+  t.textContent = text; t.style.display = 'block';
+  t.style.left = (x + 14) + 'px'; t.style.top = (y - 10) + 'px';
+}
+function hideTooltip() { document.getElementById('tooltip').style.display = 'none'; }
+
+// ─── KEYBOARD ─────────────────────────────────────────────────────────────────
+function onKeyDown(e) {
+  if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+  const k = e.key.toLowerCase();
+  if (k === 'm') setTool('move');
+  else if (k === 't') setTool('pipe');
+  else if (k === 'e') setTool('tension');
+  else if (k === 'p') setTool('pivot');
+  else if (k === 'n') setTool('note');
+  else if (k === 's') setTool('select');
+  else if (k === 'delete' || k === 'backspace') deleteSelected();
+  else if (k === 'z' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); undoLast(); }
+  else if (k === 'escape') { cancelNote(); setTool('move'); }
+}
+
+// ─── NOTE MODAL ENTER KEY ─────────────────────────────────────────────────────
+document.addEventListener('keydown', e => {
+  if (e.key === 'Enter' && document.getElementById('note-modal').style.display === 'block') confirmNote();
+});
+
+window.addEventListener('load', init);
+</script>
+</body>
+</html>
